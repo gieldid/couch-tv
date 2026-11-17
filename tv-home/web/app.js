@@ -1994,7 +1994,8 @@
     if (!HOME.say_welcome || !window.TVOS || !TVOS.say) return;
     var p = personById(id);
     if (!p) return;
-    var lang = document.documentElement.lang || "en";
+    // the voice: home.voice ("en-US", or a voice's full name), else the home's language
+    var lang = HOME.voice || document.documentElement.lang || "en";
     // their own words, typed on the phone (People), instead of "Welcome, <name>"
     if (p.greeting) {
       try { TVOS.sayParts ? TVOS.sayParts(JSON.stringify([{ text: p.greeting, lang: lang }])) : TVOS.say(p.greeting, lang); } catch (e) {}

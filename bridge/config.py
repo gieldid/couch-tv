@@ -339,6 +339,9 @@ def _home(h):
     # "Welcome, Giel" in the TV's own voice when the person watching changes (Voice.kt)
     if isinstance(h.get("say_welcome"), bool):
         out["say_welcome"] = h["say_welcome"]
+    # its voice: a language and region ("en-US") or one voice's full name (Voice.kt logs the TV's)
+    if isinstance(h.get("voice"), str) and re.fullmatch(r"[A-Za-z0-9-]{2,40}", h["voice"]):
+        out["voice"] = h["voice"]
     # "always": the 4K copies on a 4K panel whose interface is drawn at 1080 (#191). false: a 4K screen with a weak chip keeps the 1080 backgrounds (lg/build.py then leaves the 4K copies out)
     if isinstance(h.get("hi_res"), bool) or h.get("hi_res") == "always":
         out["hi_res"] = h["hi_res"]
