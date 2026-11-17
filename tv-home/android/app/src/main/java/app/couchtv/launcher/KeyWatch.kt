@@ -35,11 +35,10 @@ import java.util.concurrent.Executors
  * than one call in flight, so the amplifier never falls behind. Without an amplifier, or without a
  * bridge (option A), the volume keys are not touched.
  *
- * Some TVs handle the volume keys before any accessibility service sees them (seen on a Philips
- * TPM191E, Android 12: the keys, even mute, never reach onKeyEvent). There the TV's own volume moves,
- * and Android says so with VOLUME_CHANGED_ACTION: each step it moved goes to the amplifier, and the
- * TV's volume is set straight back to where it was, so what the TV sends out (optical, ARC) stays the
- * same. The TV's own mute is left to the TV: it silences what goes to the amplifier anyway.
+ * Some TVs handle volume up and down before any accessibility service sees them (seen on a Philips
+ * TPM191E, Android 12: mute reaches onKeyEvent, volume up and down never do). There the TV's own
+ * volume moves, and Android says so with VOLUME_CHANGED_ACTION: each step it moved goes to the
+ * amplifier, and the TV's volume is set straight back to where it was.
  *
  * Off until the person at the TV switches it on: Settings, System (or Device Preferences),
  * Accessibility, "Home gear button and amplifier volume". Android switches it off again whenever
