@@ -582,6 +582,10 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun launch(pkg: String): Boolean = launchPackage(pkg)
 
+        /** Says a short line in the TV's own voice ("Welcome, Giel"; home.say_welcome, Voice.kt). */
+        @JavascriptInterface
+        fun say(text: String, lang: String) = Voice.say(this@MainActivity, text, lang)
+
         /** Opens an http(s) web link in the TV's browser (used by custom cards with a url). */
         @JavascriptInterface
         fun openUrl(url: String): Boolean {

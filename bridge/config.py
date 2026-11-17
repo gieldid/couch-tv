@@ -329,6 +329,9 @@ def _home(h):
     # lighter home for a slow box (#58): no blur, no soft shadows, a still photo, smaller pictures
     if isinstance(h.get("lighter"), bool):
         out["lighter"] = h["lighter"]
+    # "Welcome, Giel" in the TV's own voice when the person watching changes (Voice.kt)
+    if isinstance(h.get("say_welcome"), bool):
+        out["say_welcome"] = h["say_welcome"]
     # "always": the 4K copies on a 4K panel whose interface is drawn at 1080 (#191). false: a 4K screen with a weak chip keeps the 1080 backgrounds (lg/build.py then leaves the 4K copies out)
     if isinstance(h.get("hi_res"), bool) or h.get("hi_res") == "always":
         out["hi_res"] = h["hi_res"]

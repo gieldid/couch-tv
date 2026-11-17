@@ -1986,6 +1986,15 @@
     if (!NOBODY) api("POST", "/api/who", { who: who }).catch(function () {});
     renderShelf();
     kidSync();
+    greet(who);
+  }
+  // "Welcome, Giel" in the TV's own voice when the person watching changes, on the TV or from the
+  // phone (home.say_welcome in config.json; Voice.kt). Off unless switched on.
+  function greet(id) {
+    if (!HOME.say_welcome || !window.TVOS || !TVOS.say) return;
+    var p = personById(id);
+    if (!p) return;
+    try { TVOS.say(t("welcome_person", { name: p.name }), document.documentElement.lang || "en"); } catch (e) {}
   }
   // A person switch made elsewhere (the phone, another TV): when the bridge's "who" changes, show
   // that person here too.
@@ -2003,6 +2012,7 @@
       try { localStorage.setItem("tvhome.who", who); } catch (e) {}
       renderShelf();
       kidSync();
+      greet(who);
     }, function () {});
   }
 

@@ -324,6 +324,7 @@
     person_name: "Name",
     person_rename_type: "Type the new name, then OK",
     person_remove: "Remove {name}",
+    welcome_person: "Welcome, {name}",
     person_on: "Watching now",
 
     quick_sleep: "Sleep timer",
@@ -1511,6 +1512,7 @@
     person_name: "Nombre",
     person_rename_type: "Escribe el nombre nuevo y pulsa OK",
     person_remove: "Quitar a {name}",
+    welcome_person: "Bienvenido, {name}",
     person_on: "Viendo ahora",
 
     quick_sleep: "Temporizador",
@@ -2079,6 +2081,7 @@
     person_name: "Nome",
     person_rename_type: "Scrivi il nuovo nome, poi OK",
     person_remove: "Togli {name}",
+    welcome_person: "Benvenuto, {name}",
     person_on: "Sta guardando",
 
     quick_sleep: "Timer di spegnimento",
@@ -2482,6 +2485,7 @@
     person_name: "Name",
     person_rename_type: "Neuen Namen eingeben, dann OK",
     person_remove: "{name} entfernen",
+    welcome_person: "Willkommen, {name}",
     person_on: "Schaut gerade",
 
     quick_sleep: "Sleep-Timer",
@@ -3237,6 +3241,7 @@
     person_name: "Prénom",
     person_rename_type: "Tape le nouveau prénom, puis OK",
     person_remove: "Retirer {name}",
+    welcome_person: "Bienvenue, {name}",
     person_on: "Regarde maintenant",
 
     quick_sleep: "Minuteur de sommeil",
@@ -3697,6 +3702,7 @@
     person_name: "Naam",
     person_rename_type: "Typ de nieuwe naam en druk op OK",
     person_remove: "{name} verwijderen",
+    welcome_person: "Welkom, {name}",
     person_on: "Kijkt nu",
 
     quick_sleep: "Slaaptimer",
@@ -5701,6 +5707,7 @@
     person_name: "Nome",
     person_rename_type: "Digite o novo nome, depois OK",
     person_remove: "Remover {name}",
+    welcome_person: "Bem-vindo, {name}",
     person_on: "Assistindo agora",
     quick_sleep: "Temporizador",
     quick_picture: "Troca de modo de imagem",
