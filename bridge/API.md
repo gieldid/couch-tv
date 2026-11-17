@@ -766,6 +766,7 @@ While an `on` is in progress, `/api/now` and the events stream carry `"waking": 
 With an `amplifier` on the TV (docs/CONFIG.md), this goes to the amplifier, as do the `volume_up`,
 `volume_down` and `mute` keys of `/api/key`; `volume` then also has `"device": "amplifier"` and its
 `"name"`. An amplifier that does not answer or refuses is `503`.
+`{"action": "mute", "muted": true}` sets the amplifier's mute instead of toggling it (the TV app copies the TV's own mute with it).
 
 ### `GET` / `POST /api/balance`
 Only for a TV with an `amplifier`, otherwise `404`. `POST {"balance": 50}` sets it (0 to 100, 50 the middle

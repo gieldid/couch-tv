@@ -1979,7 +1979,9 @@ async def h_amp_volume(request, a, data):
         action = data.get("action")
         if action not in ("up", "down", "mute"):
             raise ApiError(400, "action must be up, down or mute, or send level", key="err_volume_action_invalid")
-        if action == "mute":
+        if action == "mute" and isinstance(data.get("muted"), bool):
+            await amp_do(a.set_mute(data["muted"]))   # the TV app copies the TV's own mute (KeyWatch.kt)
+        elif action == "mute":
             await amp_do(a.toggle_mute())
         else:
             steps = max(1, min(int(data.get("steps", 1)), 20))

@@ -1,6 +1,7 @@
 package app.couchtv.launcher
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -41,6 +42,10 @@ import java.util.concurrent.Executors
  * (both 0 to 100 steps of 1 on a Denon; the TV's top caps it), so the TV's volume bar shows the
  * amplifier's number. That suits a TV whose speakers are off and whose sound goes to the amplifier.
  * From the first such change on, couch-tv's own note is left out, except when the amplifier does not answer.
+ * On such a TV this service also stops filtering keys: while it does, Android makes no repeats of a
+ * held key, so holding volume up or down moved only one step (Philips TPM191E). The mute key then
+ * stays with the TV too, and the TV's mute is followed (STREAM_MUTE_CHANGED_ACTION): the amplifier
+ * mutes and unmutes with it. The gear button is not caught on such a TV.
  *
  * Off until the person at the TV switches it on: Settings, System (or Device Preferences),
  * Accessibility, "Home gear button and amplifier volume". Android switches it off again whenever
@@ -51,6 +56,7 @@ class KeyWatch : AccessibilityService() {
     private val main = Handler(Looper.getMainLooper())
     private var pending = 0          // volume steps pressed but not sent yet (+ up, - down)
     private var mutes = 0            // mute presses not sent yet
+    private var muteTo: Boolean? = null   // the TV's own mute, to copy to the amplifier
     private var sending = false
     private var checkedAt = 0L
     private var toast: Toast? = null
@@ -67,7 +73,7 @@ class KeyWatch : AccessibilityService() {
             if (echo >= 0 && value == echo) { echo = -1; return }
             if (!ampOn()) return
             // this TV draws its own volume bar, which now shows the amplifier's level: no note of our own
-            if (!prefs().getBoolean(TV_BAR_PREF, false)) prefs().edit().putBoolean(TV_BAR_PREF, true).apply()
+            if (!prefs().getBoolean(TV_BAR_PREF, false)) { prefs().edit().putBoolean(TV_BAR_PREF, true).apply(); keysOff() }
             pending += value - prev
             Log.i(TAG, "tv volume $prev -> $value")
             pump()
@@ -77,19 +83,44 @@ class KeyWatch : AccessibilityService() {
     override fun onAccessibilityEvent(e: AccessibilityEvent) {}
     override fun onInterrupt() {}
 
+    /** The TV's own mute changed (on a TV whose volume keys never reach us): the amplifier follows. */
+    private val muteChanged = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            if (i.getIntExtra(EXTRA_STREAM, -1) != AudioManager.STREAM_MUSIC) return
+            if (!i.hasExtra(EXTRA_MUTED) || !prefs().getBoolean(TV_BAR_PREF, false) || !ampOn()) return
+            muteTo = i.getBooleanExtra(EXTRA_MUTED, false)
+            Log.i(TAG, "tv mute $muteTo")
+            pump()
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         io.execute { checkAmp() }
         audio = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-        val filter = IntentFilter(VOLUME_CHANGED)
         runCatching {
-            if (Build.VERSION.SDK_INT >= 33) registerReceiver(volumeChanged, filter, Context.RECEIVER_NOT_EXPORTED)
-            else registerReceiver(volumeChanged, filter)
+            for ((r, f) in listOf(volumeChanged to IntentFilter(VOLUME_CHANGED), muteChanged to IntentFilter(MUTE_CHANGED))) {
+                if (Build.VERSION.SDK_INT >= 33) registerReceiver(r, f, Context.RECEIVER_NOT_EXPORTED)
+                else registerReceiver(r, f)
+            }
+        }
+        if (prefs().getBoolean(TV_BAR_PREF, false)) keysOff()
+    }
+
+    /** Stop filtering keys (see the class comment): held volume keys repeat again on this TV. */
+    private fun keysOff() {
+        runCatching {
+            val info = serviceInfo ?: return
+            if (info.flags and AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS == 0) return
+            info.flags = info.flags and AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS.inv()
+            serviceInfo = info
+            Log.i(TAG, "key filter off: this TV keeps its volume keys")
         }
     }
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(volumeChanged) }
+        runCatching { unregisterReceiver(muteChanged) }
         io.shutdownNow()
         super.onDestroy()
     }
@@ -136,9 +167,13 @@ class KeyWatch : AccessibilityService() {
 
     /** Send what has been pressed, one call at a time (runs on the main thread). */
     private fun pump() {
-        if (sending || (pending == 0 && mutes == 0)) return
+        if (sending || (pending == 0 && mutes == 0 && muteTo == null)) return
         val body = JSONObject()
-        if (mutes > 0) {
+        val m = muteTo
+        if (m != null) {
+            muteTo = null
+            body.put("action", "mute").put("muted", m)
+        } else if (mutes > 0) {
             mutes -= 1
             body.put("action", "mute")
         } else {
@@ -243,6 +278,8 @@ class KeyWatch : AccessibilityService() {
         private const val EXTRA_STREAM = "android.media.EXTRA_VOLUME_STREAM_TYPE"
         private const val EXTRA_VALUE = "android.media.EXTRA_VOLUME_STREAM_VALUE"
         private const val EXTRA_PREV = "android.media.EXTRA_PREV_VOLUME_STREAM_VALUE"
+        private const val MUTE_CHANGED = "android.media.STREAM_MUTE_CHANGED_ACTION"
+        private const val EXTRA_MUTED = "android.media.EXTRA_STREAM_VOLUME_MUTED"
 
         /** The ONVO remote's gear: KEYCODE_BUTTON_14 (201), raw Linux KEY_TAPE (0x180 = 384), which
          *  the global-key table hands to MediaTek's hot-key agent. 176 is Android's own Settings key,
