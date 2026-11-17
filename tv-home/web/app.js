@@ -4907,6 +4907,22 @@
     // This TV says who is on its couch first, so what plays here is logged for them (each TV
     // keeps its own); then the lists. Once the home is up: the one-time "tell you about new versions?" question.
     if (!OFFLINE) setInterval(followWho, 3000);
+    // the bridge's live stream says at once when the phone picks someone else (the poll above stays as a fallback)
+    if (!OFFLINE && !MOCK && !PREVIEW && window.EventSource) {
+      try {
+        var q = [];
+        if (TV_ID) q.push("tv=" + encodeURIComponent(TV_ID));
+        if (KEY) q.push("key=" + encodeURIComponent(KEY));
+        var live = new EventSource(API + "/api/events" + (q.length ? "?" + q.join("&") : ""));
+        live.addEventListener("now", function (ev) {
+          var j = null;
+          try { j = JSON.parse(ev.data); } catch (e) {}
+          if (j && j.who && j.who !== bridgeWho) followWho();
+        });
+      } catch (e) {}
+    }
+    // start the TV's voice now, so the first welcome is not late (Voice.kt starts on an empty line)
+    if (HOME.say_welcome && window.TVOS && TVOS.sayParts) { try { TVOS.sayParts("[]"); } catch (e) {} }
     // The bridge's choice wins (a phone that just turned the TV on set it); this TV's own memory is
     // only handed over when the bridge has nobody yet.
     var hello = OFFLINE ? Promise.resolve() : api("GET", "/api/who").then(function (j) {

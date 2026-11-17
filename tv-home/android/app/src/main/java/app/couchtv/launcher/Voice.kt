@@ -22,8 +22,11 @@ object Voice {
     fun say(c: Context, parts: List<Pair<String, String>>) {
         val clean = parts.map { (text, lang) -> text.trim().take(200) to lang }
             .filter { (text, _) -> text.any { it.isLetterOrDigit() } }
-        if (clean.isEmpty()) return
         val engine = tts
+        if (clean.isEmpty()) {   // nothing to say: only start the engine, so the first real line is quick
+            if (engine == null) tts = TextToSpeech(c.applicationContext) { status -> started(status) }
+            return
+        }
         if (engine == null) {
             waiting = clean
             tts = TextToSpeech(c.applicationContext) { status -> started(status) }
