@@ -1,10 +1,15 @@
 package app.couchtv.launcher
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
@@ -30,6 +35,12 @@ import java.util.concurrent.Executors
  * than one call in flight, so the amplifier never falls behind. Without an amplifier, or without a
  * bridge (option A), the volume keys are not touched.
  *
+ * Some TVs handle the volume keys before any accessibility service sees them (seen on a Philips
+ * TPM191E, Android 12: the keys, even mute, never reach onKeyEvent). There the TV's own volume moves,
+ * and Android says so with VOLUME_CHANGED_ACTION: each step it moved goes to the amplifier, and the
+ * TV's volume is set straight back to where it was, so what the TV sends out (optical, ARC) stays the
+ * same. The TV's own mute is left to the TV: it silences what goes to the amplifier anyway.
+ *
  * Off until the person at the TV switches it on: Settings, System (or Device Preferences),
  * Accessibility, "Home gear button and amplifier volume". Android switches it off again whenever
  * the app is reinstalled. undo.sh takes it away with couch-tv's other accessibility services.
@@ -42,6 +53,34 @@ class KeyWatch : AccessibilityService() {
     private var sending = false
     private var checkedAt = 0L
     private var toast: Toast? = null
+    private var audio: AudioManager? = null
+    private var hold = -1            // the TV's own level, held while the amplifier has the volume
+    private var lastMove = 0L
+    private var skipEcho = false     // the next change is our own setStreamVolume back to [hold]
+
+    /** The TV moved its own volume (the keys never reached [onKeyEvent]): hand the step on. */
+    private val volumeChanged = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            if (i.getIntExtra(EXTRA_STREAM, -1) != AudioManager.STREAM_MUSIC) return
+            val value = i.getIntExtra(EXTRA_VALUE, -1)
+            val prev = i.getIntExtra(EXTRA_PREV, -1)
+            if (value < 0 || prev < 0 || value == prev) return
+            if (skipEcho && value == hold) { skipEcho = false; return }
+            if (!ampOn()) { hold = -1; return }
+            val am = audio ?: return
+            val now = SystemClock.uptimeMillis()
+            // after a pause, hold whatever the TV was at; never 0 or the top, where a press would not register
+            if (hold < 0 || now - lastMove > HOLD_IDLE_MS) hold = prev.coerceIn(1, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) - 1)
+            lastMove = now
+            pending += value - prev
+            Log.i(TAG, "tv volume $prev -> $value, back to $hold")
+            if (am.getStreamVolume(AudioManager.STREAM_MUSIC) != hold) {
+                skipEcho = true
+                runCatching { am.setStreamVolume(AudioManager.STREAM_MUSIC, hold, 0) }
+            }
+            pump()
+        }
+    }
 
     override fun onAccessibilityEvent(e: AccessibilityEvent) {}
     override fun onInterrupt() {}
@@ -49,9 +88,16 @@ class KeyWatch : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         io.execute { checkAmp() }
+        audio = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        val filter = IntentFilter(VOLUME_CHANGED)
+        runCatching {
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(volumeChanged, filter, Context.RECEIVER_NOT_EXPORTED)
+            else registerReceiver(volumeChanged, filter)
+        }
     }
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(volumeChanged) }
         io.shutdownNow()
         super.onDestroy()
     }
@@ -77,8 +123,7 @@ class KeyWatch : AccessibilityService() {
     /** A volume key: true (taken) when this TV's volume belongs to an amplifier. */
     private fun volume(event: KeyEvent): Boolean {
         val now = System.currentTimeMillis()
-        if (now - checkedAt > RECHECK_MS) { checkedAt = now; io.execute { checkAmp() } }
-        if (!prefs().getBoolean(AMP_PREF, false) || prefs().getString("bridge", null) == null) return false
+        if (!ampOn()) return false
         if (event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_VOLUME_UP -> pending += 1
@@ -88,6 +133,13 @@ class KeyWatch : AccessibilityService() {
             pump()
         }
         return true   // the press and the release: the TV's own volume never moves
+    }
+
+    /** Whether this TV's volume belongs to an amplifier (asks the bridge again now and then). */
+    private fun ampOn(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - checkedAt > RECHECK_MS) { checkedAt = now; io.execute { checkAmp() } }
+        return prefs().getBoolean(AMP_PREF, false) && prefs().getString("bridge", null) != null
     }
 
     /** Send what has been pressed, one call at a time (runs on the main thread). */
@@ -179,6 +231,12 @@ class KeyWatch : AccessibilityService() {
         private const val AMP_NAME_PREF = "amp_name"
         private const val RECHECK_MS = 5 * 60_000L
         private const val MAX_STEPS = 10
+        private const val HOLD_IDLE_MS = 3000L
+        // AudioManager's own names for these are hidden from apps; the broadcast itself is public.
+        private const val VOLUME_CHANGED = "android.media.VOLUME_CHANGED_ACTION"
+        private const val EXTRA_STREAM = "android.media.EXTRA_VOLUME_STREAM_TYPE"
+        private const val EXTRA_VALUE = "android.media.EXTRA_VOLUME_STREAM_VALUE"
+        private const val EXTRA_PREV = "android.media.EXTRA_PREV_VOLUME_STREAM_VALUE"
 
         /** The ONVO remote's gear: KEYCODE_BUTTON_14 (201), raw Linux KEY_TAPE (0x180 = 384), which
          *  the global-key table hands to MediaTek's hot-key agent. 176 is Android's own Settings key,
