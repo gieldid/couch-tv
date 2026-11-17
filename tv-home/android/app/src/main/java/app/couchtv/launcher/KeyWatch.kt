@@ -40,6 +40,7 @@ import java.util.concurrent.Executors
  * amplifier. Once the amplifier has caught up, the TV's own volume is set to the amplifier's level
  * (both 0 to 100 steps of 1 on a Denon; the TV's top caps it), so the TV's volume bar shows the
  * amplifier's number. That suits a TV whose speakers are off and whose sound goes to the amplifier.
+ * From the first such change on, couch-tv's own note is left out, except when the amplifier does not answer.
  *
  * Off until the person at the TV switches it on: Settings, System (or Device Preferences),
  * Accessibility, "Home gear button and amplifier volume". Android switches it off again whenever
@@ -65,6 +66,8 @@ class KeyWatch : AccessibilityService() {
             if (value < 0 || prev < 0 || value == prev) return
             if (echo >= 0 && value == echo) { echo = -1; return }
             if (!ampOn()) return
+            // this TV draws its own volume bar, which now shows the amplifier's level: no note of our own
+            if (!prefs().getBoolean(TV_BAR_PREF, false)) prefs().edit().putBoolean(TV_BAR_PREF, true).apply()
             pending += value - prev
             Log.i(TAG, "tv volume $prev -> $value")
             pump()
@@ -172,6 +175,7 @@ class KeyWatch : AccessibilityService() {
         val v = reply?.optJSONObject("volume")
         val text = when {
             reply == null || v == null -> getString(R.string.amp_unreachable)
+            prefs().getBoolean(TV_BAR_PREF, false) -> return   // the TV's own bar shows it (see volumeChanged)
             v.optBoolean("muted") -> getString(R.string.amp_muted, ampName())
             v.has("level") && !v.isNull("level") -> getString(R.string.amp_level, ampName(), v.optInt("level"))
             else -> return
@@ -231,6 +235,7 @@ class KeyWatch : AccessibilityService() {
         private const val TAG = "couchtv-keywatch"
         private const val AMP_PREF = "amp_volume"
         private const val AMP_NAME_PREF = "amp_name"
+        private const val TV_BAR_PREF = "amp_tv_bar"
         private const val RECHECK_MS = 5 * 60_000L
         private const val MAX_STEPS = 10
         // AudioManager's own names for these are hidden from apps; the broadcast itself is public.
