@@ -164,6 +164,10 @@ out the same way. The phone's People sheet keeps these marks when it renames or 
 { "id": "visitor", "name": "Visitor", "guest": true }
 ```
 
+`"name_lang"` (optional) is the language the TV's voice says that person's name in, for the welcome
+(`home.say_welcome`): `"nl"` makes an English home say "Welcome," and then the name with the Dutch
+voice. A language the TV has no voice for is said with its default voice.
+
 - **None or one person:** no switcher. Keep watching shows everything watched on that TV.
 - **Keep watching is per TV and per person.** Each TV remembers who is on its couch, and each
   person sees only what they watched on that TV: one card per show, newest first, up to 10, gone

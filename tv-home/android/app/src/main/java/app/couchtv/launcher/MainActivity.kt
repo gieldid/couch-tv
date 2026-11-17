@@ -584,7 +584,17 @@ class MainActivity : Activity() {
 
         /** Says a short line in the TV's own voice ("Welcome, Giel"; home.say_welcome, Voice.kt). */
         @JavascriptInterface
-        fun say(text: String, lang: String) = Voice.say(this@MainActivity, text, lang)
+        fun say(text: String, lang: String) = Voice.say(this@MainActivity, listOf(text to lang))
+
+        /** The same in parts, each in its own language: [{"text": "Welcome, ", "lang": "en"}, {"text": "Giel", "lang": "nl"}]. */
+        @JavascriptInterface
+        fun sayParts(json: String) {
+            val a = runCatching { JSONArray(json) }.getOrNull() ?: return
+            val parts = (0 until minOf(a.length(), 6)).mapNotNull { i ->
+                a.optJSONObject(i)?.let { it.optString("text") to it.optString("lang") }
+            }
+            Voice.say(this@MainActivity, parts)
+        }
 
         /** Opens an http(s) web link in the TV's browser (used by custom cards with a url). */
         @JavascriptInterface

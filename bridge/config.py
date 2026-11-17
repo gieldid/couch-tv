@@ -141,6 +141,9 @@ def clean_people(items):
         for flag in ("kid", "guest"):
             if p.get(flag) is True:
                 item[flag] = True
+        # The language their name is said in by the TV's voice ("nl" for a Dutch name in an English home).
+        if isinstance(p.get("name_lang"), str) and re.fullmatch(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8})?", p["name_lang"]):
+            item["name_lang"] = p["name_lang"]
         # Their profile names inside Netflix, Stan, Disney+ and the rest, best first, for the
         # "Who's watching?" screen. Without it their own name is tried.
         names = [" ".join(str(n).split())[:40] for n in p.get("app_profiles") or [] if isinstance(n, str)]

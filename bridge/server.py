@@ -1701,9 +1701,9 @@ async def h_people_set(request):
     for item in people:
         if isinstance(item, dict) and not " ".join(str(item.get("name") or "").split()):
             raise ApiError(400, "every person needs a name", key="err_person_needs_name")
-    # The phone only edits names and order: keep each person's kid and guest marks from config.
+    # The phone only edits names and order: keep each person's kid and guest marks and name language.
     old = {p["id"]: p for p in config.PEOPLE}
-    people = [{**{k: old[i["id"]][k] for k in ("kid", "guest") if k in old.get(i.get("id"), {})}, **i}
+    people = [{**{k: old[i["id"]][k] for k in ("kid", "guest", "name_lang") if k in old.get(i.get("id"), {})}, **i}
               if isinstance(i, dict) and i.get("id") in old else i for i in people]
     config.set_people(people)
     for tv_id in TVS:   # the person on the couch at a TV was removed

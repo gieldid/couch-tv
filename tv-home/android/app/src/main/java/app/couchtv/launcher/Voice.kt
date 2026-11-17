@@ -8,26 +8,29 @@ import java.util.Locale
 /**
  * A short spoken line through the TV's own text to speech voice (Google's on most Android TVs), for
  * "Welcome, Giel" when the person watching changes (home.say_welcome in config.json, app.js greet()).
+ * A line can come in parts, each in its own language, so a Dutch name in an English home is said by
+ * the Dutch voice (a person's "name_lang"). A language the TV has no voice for uses its default voice.
  * The engine starts the first time it is needed and stays for the life of the app. A TV without an
  * engine simply says nothing. Nothing leaves the TV: the engine speaks on the TV itself.
  */
 object Voice {
     private var tts: TextToSpeech? = null
     private var ready = false
-    private var waiting: Pair<String, String>? = null   // a line asked for before the engine was up
+    private var waiting: List<Pair<String, String>>? = null   // asked for before the engine was up
 
     @Synchronized
-    fun say(c: Context, text: String, lang: String) {
-        val line = text.trim().take(200)
-        if (line.isEmpty()) return
+    fun say(c: Context, parts: List<Pair<String, String>>) {
+        val clean = parts.map { (text, lang) -> text.trim().take(200) to lang }
+            .filter { (text, _) -> text.any { it.isLetterOrDigit() } }
+        if (clean.isEmpty()) return
         val engine = tts
         if (engine == null) {
-            waiting = line to lang
+            waiting = clean
             tts = TextToSpeech(c.applicationContext) { status -> started(status) }
             return
         }
-        if (!ready) { waiting = line to lang; return }
-        speak(engine, line, lang)
+        if (!ready) { waiting = clean; return }
+        speak(engine, clean)
     }
 
     @Synchronized
@@ -41,15 +44,19 @@ object Voice {
             return
         }
         ready = true
-        waiting?.let { (line, lang) -> speak(engine, line, lang) }
+        waiting?.let { speak(engine, it) }
         waiting = null
     }
 
-    private fun speak(engine: TextToSpeech, line: String, lang: String) {
+    private fun speak(engine: TextToSpeech, parts: List<Pair<String, String>>) {
         runCatching {
-            val locale = Locale.forLanguageTag(lang.ifBlank { "en" })
-            if (engine.isLanguageAvailable(locale) >= TextToSpeech.LANG_AVAILABLE) engine.language = locale
-            engine.speak(line, TextToSpeech.QUEUE_FLUSH, null, "couchtv-welcome")
+            val fallback = engine.defaultVoice?.locale ?: Locale.getDefault()
+            parts.forEachIndexed { i, (line, lang) ->
+                val locale = Locale.forLanguageTag(lang.ifBlank { "en" })
+                // the language goes with each request, so every part keeps its own voice
+                engine.language = if (engine.isLanguageAvailable(locale) >= TextToSpeech.LANG_AVAILABLE) locale else fallback
+                engine.speak(line, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "couchtv-welcome-$i")
+            }
         }.onFailure { Log.w(TAG, "could not speak: ${it.javaClass.simpleName}") }
     }
 

@@ -1994,7 +1994,13 @@
     if (!HOME.say_welcome || !window.TVOS || !TVOS.say) return;
     var p = personById(id);
     if (!p) return;
-    try { TVOS.say(t("welcome_person", { name: p.name }), document.documentElement.lang || "en"); } catch (e) {}
+    var lang = document.documentElement.lang || "en";
+    // a name from another language ("name_lang") is said by that language's voice, the rest by the home's
+    var line = t("welcome_person", { name: "\u0000" }).split("\u0000");
+    var parts = p.name_lang && p.name_lang !== lang && line.length === 2 && TVOS.sayParts
+      ? [{ text: line[0], lang: lang }, { text: p.name, lang: p.name_lang }, { text: line[1], lang: lang }]
+      : [{ text: t("welcome_person", { name: p.name }), lang: lang }];
+    try { TVOS.sayParts ? TVOS.sayParts(JSON.stringify(parts)) : TVOS.say(parts[0].text, lang); } catch (e) {}
   }
   // A person switch made elsewhere (the phone, another TV): when the bridge's "who" changes, show
   // that person here too.
