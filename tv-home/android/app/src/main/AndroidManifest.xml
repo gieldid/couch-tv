@@ -152,12 +152,13 @@
             </intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/fire_watch" />
         </service>
-        <!-- The remote's gear button on TVs that never hand it to an app (KeyWatch.kt). Off until the
-             person at the TV switches it on in Accessibility; it catches only that button and reads no screen content. -->
+        <!-- The remote's gear button on TVs that never hand it to an app, and the volume keys when an
+             amplifier takes over the volume (KeyWatch.kt). Off until the person at the TV switches it on
+             in Accessibility; it catches only those buttons and reads no screen content. -->
         <service
             android:name=".KeyWatch"
             android:exported="false"
-            android:label="Home gear button"
+            android:label="Home gear button and amplifier volume"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

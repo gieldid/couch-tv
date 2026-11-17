@@ -58,9 +58,15 @@ Most remotes send Android's `SETTINGS` key, and the launcher catches it
 (`MainActivity.dispatchKeyEvent`). Some do not: on an ONVO TV (MediaTek, Google TV, Android 14)
 the gear sends `BUTTON_14` (201), and Android's global-key table hands it to the maker's hot-key
 agent, so no app ever sees it. For those TVs the app has a small accessibility service, **Home gear
-button** (`KeyWatch.kt`). It catches only that button, passes every other key on, and reads no
+button and amplifier volume** (`KeyWatch.kt`). It catches only that button, passes every other key on, and reads no
 screen content. It is off until you switch it on at the TV: Settings, System (or Device
-Preferences), Accessibility, Home gear button. Android switches it off again whenever couch-tv is
+Preferences), Accessibility, Home gear button and amplifier volume.
+
+With an `amplifier` on the TV in config.json (docs/CONFIG.md, Amplifier) and option B's bridge, the
+same service also takes the TV remote's **volume up, down and mute** and sends them to the amplifier
+through the bridge, so the TV's own volume stays put and a small "Denon PMA-900HNE: 34" note shows
+for a moment. A held button moves a few steps per call. Without an amplifier the volume keys are left
+alone. Tried on a Philips TPM191E (Android 12), whose remote's volume keys go through Android. Android switches it off again whenever couch-tv is
 reinstalled or updated, so switch it back on after that. `undo.sh` switches it off.
 
 To find what your remote's gear sends: `adb logcat -s couchtv-keywatch` while the service is on.

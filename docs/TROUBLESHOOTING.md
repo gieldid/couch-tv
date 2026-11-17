@@ -58,11 +58,11 @@ until it is tested on a real TCL.
 
 **A fix confirmed on a real TCL (0.12, without the TV input):** from a computer, once, run
 `adb shell appops set app.couchtv.launcher AUTO_START allow`, then on the TV itself open Settings,
-Accessibility and switch on **Home button watch** and **Home gear button** with the remote (not over
+Accessibility and switch on **Home button watch** and **Home gear button and amplifier volume** with the remote (not over
 ADB). After a real power cut at the wall the TV went straight to couch-tv with no flash of Google
 TV, and TCL kept AUTO_START allowed. It is not yet known which of the two steps does it, so do both. If the two services are not in the Accessibility menu yet, open couch-tv once, then set AUTO_START and write `enabled_accessibility_services` and `accessibility_enabled 1` over ADB: on that TCL the services only appeared in the menu once they were actually running.
 
-**Not on every TCL.** On a second TCL (Smart TV Pro, build G08 AU02, Android 14, 0.12) the same two steps survived a restart from the TV's menu but not a real power cut: TCL set AUTO_START back to `ignore` about 20 seconds after boot, and only the Home gear button came back, not the Home button watch. TCL's own Safety Guard app has no switch for this, so on that TV ADB is the only way to allow it. What brought it back from a computer: set AUTO_START, run `cmd package set-home-activity`, start couch-tv, then write `enabled_accessibility_services` with the Home gear button alone first, and then with both. Writing both at once did not bring the Home button watch back.
+**Not on every TCL.** On a second TCL (Smart TV Pro, build G08 AU02, Android 14, 0.12) the same two steps survived a restart from the TV's menu but not a real power cut: TCL set AUTO_START back to `ignore` about 20 seconds after boot, and only the Home gear button and amplifier volume came back, not the Home button watch. TCL's own Safety Guard app has no switch for this, so on that TV ADB is the only way to allow it. What brought it back from a computer: set AUTO_START, run `cmd package set-home-activity`, start couch-tv, then write `enabled_accessibility_services` with the Home gear button and amplifier volume service alone first, and then with both. Writing both at once did not bring the Home button watch back.
 
 On some TVs, installing or removing any other app makes Android forget couch-tv as the home (the Home button watch still brings it back after a flash of Google TV). Running `cmd package set-home-activity app.couchtv.launcher/.MainActivity` again fixes it straight away.
 

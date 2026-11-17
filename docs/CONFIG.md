@@ -47,6 +47,36 @@ settings), and what is chosen there wins on that TV. See
 | `ares_device` [the TV's `id`] | LG only: this TV's name in LG's ares tools (`ares-setup-device`). |
 | `ares_launch` [found on the PATH] | LG only: the full path to `ares-launch`, for a bridge that cannot find it (started by launchd, for example). |
 | `port` [LG 3000, then 3001; Roku 8060; VIDAA 36669, then 36668; VIZIO 7345, then 9000; Panasonic 55000; TiVo OS 56789] | LG, Roku, VIDAA, VIZIO, Panasonic and TiVo OS only: the network remote's port, if your TV only answers on one of them (a Roku's is 8060 unless something else changed it). |
+| `amplifier` | Optional: a network amplifier that takes over this TV's volume. See below. |
+
+### Amplifier (`amplifier`)
+
+With an `amplifier` on a TV, the phone remote's volume up, down, mute and level, and the assistant's
+volume keys, go to the amplifier instead of the TV. One kind so far, `"upnp"`: an amplifier or receiver
+with a UPnP RenderingControl service (Denon and Marantz with HEOS). Tried on a Denon PMA-900HNE.
+
+```json
+"amplifier": {
+  "name": "Denon PMA-900HNE",
+  "ip": "192.168.0.35",
+  "port": 60006,
+  "control_path": "/upnp/control/renderer_dvc/RenderingControl",
+  "step": 2,
+  "max_volume": 60
+}
+```
+
+| Key | What it does |
+|---|---|
+| `ip` | The amplifier's address. Give it a fixed address in the router. |
+| `port` [60006], `control_path` [`/upnp/control/renderer_dvc/RenderingControl`] | Where its RenderingControl answers. The defaults are a Denon or Marantz with HEOS. |
+| `description_url` | Instead of `port` and `control_path`: the device description (the `LOCATION` an SSDP search answers with); the bridge finds the control URL in it. |
+| `step` [2] | How far one press of volume up or down moves it (0 to 100 scale). |
+| `max_volume` [100] | The phone and the assistant never set it higher than this. |
+| `name` | What the phone shows as the volume's device. |
+| `enabled` [true] | `false` hands the volume back to the TV without removing the block. |
+
+`GET` and `POST /api/balance` read and set its balance (`bridge/API.md`).
 
 ### Quick buttons (`quick`)
 

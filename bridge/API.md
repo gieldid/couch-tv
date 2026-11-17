@@ -59,6 +59,9 @@ The bridge can run more than one TV. Every endpoint takes an optional TV id:
 ]}
 ```
 
+A TV with an `amplifier` in config.json also has `"amplifier": {"name": "Denon PMA-900HNE"}`; the TV app's
+KeyWatch then sends the TV remote's volume keys to `/api/volume` (docs/CONFIG.md, Amplifier).
+
 A Roku (`"kind": "roku"`) also has `ecp` and `hook`: `{"ecp": {"limited": false, "message": null}, "hook": ["13:02:11 TV came on, opened couch-tv"]}`.
 `ecp.limited` is `true` when the Roku answered a command with 403, which means its "Control by mobile apps"
 setting is limiting remote control; `message` then says where to change it (docs/ROKU.md).
@@ -759,6 +762,16 @@ While an `on` is in progress, `/api/now` and the events stream carry `"waking": 
 `{"level": 20}` (0 to 100, only when `/api/now` says `volume.known` is `true`; otherwise `409`).
 ```json
 {"ok": true, "volume": {"level": 13, "max": 100, "muted": false, "known": true}}
+```
+With an `amplifier` on the TV (docs/CONFIG.md), this goes to the amplifier, as do the `volume_up`,
+`volume_down` and `mute` keys of `/api/key`; `volume` then also has `"device": "amplifier"` and its
+`"name"`. An amplifier that does not answer or refuses is `503`.
+
+### `GET` / `POST /api/balance`
+Only for a TV with an `amplifier`, otherwise `404`. `POST {"balance": 50}` sets it (0 to 100, 50 the middle
+on a Denon PMA-900HNE, lower is left). Both answer with what the amplifier now reports:
+```json
+{"ok": true, "balance": 50, "min": 0, "max": 100, "centre": 50}
 ```
 
 ### `GET /api/screenshot`

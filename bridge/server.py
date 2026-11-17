@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 from aiohttp import web
 
+import amplifier
 import apps
 import config
 import custom_cards
@@ -93,6 +94,29 @@ def make_tv(cfg):
 
 
 TVS = {c["id"]: make_tv(c) for c in TV_CONFIG["tvs"]}
+# An amplifier that takes over a TV's volume ("amplifier" on the TV in config.json, bridge/amplifier.py).
+AMPS = {c["id"]: amplifier.from_config(c.get("amplifier")) for c in TV_CONFIG["tvs"]}
+
+
+def amp():
+    """The amplifier of the TV this request or loop is for, or None."""
+    return AMPS.get(_current.get())
+
+
+def shown_volume():
+    """The volume the phone shows: the amplifier's when the TV has one, else the TV's."""
+    a = amp()
+    if a is None:
+        return tv.volume
+    a.refresh_soon()
+    return a.volume
+
+
+async def amp_do(coro):
+    try:
+        return await coro
+    except amplifier.AmpError as e:
+        raise ApiError(503, str(e), key="err_amplifier", vars={"detail": str(e)}) from e
 DEFAULT_TV = TV_CONFIG["default"]
 _current = contextvars.ContextVar("tv", default=DEFAULT_TV)
 
@@ -550,7 +574,7 @@ def now_payload():
         "adb": tv.adb_ok,
         "power": "unknown" if on is None else ("on" if on else "off"),
         "app": apps.describe_package(pkg),
-        "volume": tv.volume,
+        "volume": shown_volume(),
         "playing": out_playing,
         "sleep": {"ends": sleep["ends"]},
         "idle": {"ends": idle_st["ends"], "reason": "paused"} if idle_st.get("ends") else None,
@@ -646,6 +670,14 @@ async def h_key(request):
     if not key:
         raise ApiError(400, "key is required", key="err_key_required")
     _reset_paused_idle()
+    a = amp()
+    if a is not None and key in ("volume_up", "volume_down", "mute"):
+        if key == "mute":
+            await amp_do(a.toggle_mute())
+        else:
+            await amp_do(a.step_volume(1 if key == "volume_up" else -1))
+        record_action(request, "key", {"key": key}, True)
+        return ok(key=key, volume=a.volume)
     await tv.key(str(key), hold=bool(data.get("hold")))
     record_action(request, "key", {"key": key}, True)
     return ok(key=key)
@@ -1940,8 +1972,44 @@ async def power_on():
         )
 
 
+async def h_amp_volume(request, a, data):
+    if "level" in data:
+        await amp_do(a.set_volume(max(0, min(100, int(data["level"])))))
+    else:
+        action = data.get("action")
+        if action not in ("up", "down", "mute"):
+            raise ApiError(400, "action must be up, down or mute, or send level", key="err_volume_action_invalid")
+        if action == "mute":
+            await amp_do(a.toggle_mute())
+        else:
+            steps = max(1, min(int(data.get("steps", 1)), 20))
+            await amp_do(a.step_volume(1 if action == "up" else -1, steps))
+    record_action(request, "volume", data, True)
+    return ok(volume=a.volume)
+
+
+async def h_balance(request):
+    """The amplifier's balance: GET reads it, POST {"balance": 0..100} sets it (50 is the middle on a
+    Denon PMA-900HNE). Only for a TV with an "amplifier" in config.json."""
+    a = amp()
+    if a is None:
+        raise ApiError(404, "this TV has no amplifier in config.json", key="err_no_amplifier")
+    if request.method == "POST":
+        data = await body(request)
+        try:
+            value = int(data["balance"])
+        except (KeyError, TypeError, ValueError):
+            raise ApiError(400, "balance must be a number from 0 to 100", key="err_balance_invalid")
+        value = await amp_do(a.set_balance(value))
+        record_action(request, "balance", data, True)
+    value = await amp_do(a.get_balance())
+    return ok(balance=value, min=0, max=100, centre=50)
+
+
 async def h_volume(request):
     data = await body(request)
+    if amp() is not None:
+        return await h_amp_volume(request, amp(), data)
     if "level" in data and hasattr(tv, "set_volume"):
         await tv.set_volume(max(0, min(100, int(data["level"]))))   # Panasonic: set over UPnP in one step
         record_action(request, "volume", data, True)
@@ -3737,6 +3805,9 @@ async def h_tvs(request):
         on = t.is_on
         row = {"id": tv_id, "name": t.name, "kind": t.kind, "paired": t.paired, "picture": bool(t.picture_cfg),
                "connected": t.connected, "adb": t.adb_ok, "power": "unknown" if on is None else ("on" if on else "off")}
+        if AMPS.get(tv_id) is not None:
+            # the TV app's KeyWatch sends the remote's volume keys here when this is set
+            row["amplifier"] = {"name": AMPS[tv_id].name}
         if t.kind == "samsung":
             row |= {"art_mode": t.art_mode, "hook": [f"{w} {what}" for w, what in t.hook_log]}
         elif t.kind == "lg":
@@ -3841,6 +3912,8 @@ def make_app():
     r.add_post("/api/screens/open", h_screens_open)
     r.add_post("/api/power", h_power)
     r.add_post("/api/volume", h_volume)
+    r.add_get("/api/balance", h_balance)
+    r.add_post("/api/balance", h_balance)
     r.add_get("/api/screenshot", h_screenshot)
     agentic.routes(r)
     r.add_route("OPTIONS", "/api/{tail:.*}", h_options)
@@ -3861,6 +3934,9 @@ def make_app():
             t.on_change(lambda tv_id=tv_id: with_tv(tv_id, push_now))
             t.on_change(lambda tv_id=tv_id: with_tv(tv_id, _maybe_refresh_installed))
             t.on_change(lambda tv_id=tv_id: with_tv(tv_id, _close_on_off))
+            if AMPS.get(tv_id) is not None:
+                AMPS[tv_id].on_change(lambda tv_id=tv_id: with_tv(tv_id, push_now))
+                AMPS[tv_id].refresh_soon(max_age=0)
             ends = store.sleep_ends(tv_id)
             if ends and datetime.fromisoformat(ends).timestamp() > time.time():
                 with_tv(tv_id, _sleep_set, ends)
@@ -3870,6 +3946,9 @@ def make_app():
         app["bonjour"] = await advertise_for_appletv()
 
     async def on_cleanup(_):
+        for a in AMPS.values():
+            if a is not None:
+                await a.close()
         if finder._session and not finder._session.closed:
             await finder._session.close()
         if app.get("bonjour"):
