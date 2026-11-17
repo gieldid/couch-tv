@@ -78,6 +78,12 @@ with a UPnP RenderingControl service (Denon and Marantz with HEOS). Tried on a D
 
 `GET` and `POST /api/balance` read and set its balance (`bridge/API.md`).
 
+The TV remote's volume keys go to the amplifier too once **Home gear button and amplifier volume** is
+switched on in the TV's Accessibility settings. Some TVs keep volume up and down to themselves (a
+Philips TPM191E did); there couch-tv follows the TV's own volume, sends each step to the amplifier and
+then sets the TV to the amplifier's level, so the TV's volume bar shows the amplifier's number. Use
+that with the TV's own speakers switched off.
+
 ### Quick buttons (`quick`)
 
 The round buttons at the top right of the home. Any of these, in the order you list them:

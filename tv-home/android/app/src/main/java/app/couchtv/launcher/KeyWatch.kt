@@ -9,7 +9,6 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.util.Log
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
@@ -38,7 +37,9 @@ import java.util.concurrent.Executors
  * Some TVs handle volume up and down before any accessibility service sees them (seen on a Philips
  * TPM191E, Android 12: mute reaches onKeyEvent, volume up and down never do). There the TV's own
  * volume moves, and Android says so with VOLUME_CHANGED_ACTION: each step it moved goes to the
- * amplifier, and the TV's volume is set straight back to where it was.
+ * amplifier. Once the amplifier has caught up, the TV's own volume is set to the amplifier's level
+ * (both 0 to 100 steps of 1 on a Denon; the TV's top caps it), so the TV's volume bar shows the
+ * amplifier's number. That suits a TV whose speakers are off and whose sound goes to the amplifier.
  *
  * Off until the person at the TV switches it on: Settings, System (or Device Preferences),
  * Accessibility, "Home gear button and amplifier volume". Android switches it off again whenever
@@ -53,9 +54,7 @@ class KeyWatch : AccessibilityService() {
     private var checkedAt = 0L
     private var toast: Toast? = null
     private var audio: AudioManager? = null
-    private var hold = -1            // the TV's own level, held while the amplifier has the volume
-    private var lastMove = 0L
-    private var skipEcho = false     // the next change is our own setStreamVolume back to [hold]
+    private var echo = -1            // the level of our own setStreamVolume, whose broadcast is skipped
 
     /** The TV moved its own volume (the keys never reached [onKeyEvent]): hand the step on. */
     private val volumeChanged = object : BroadcastReceiver() {
@@ -64,19 +63,10 @@ class KeyWatch : AccessibilityService() {
             val value = i.getIntExtra(EXTRA_VALUE, -1)
             val prev = i.getIntExtra(EXTRA_PREV, -1)
             if (value < 0 || prev < 0 || value == prev) return
-            if (skipEcho && value == hold) { skipEcho = false; return }
-            if (!ampOn()) { hold = -1; return }
-            val am = audio ?: return
-            val now = SystemClock.uptimeMillis()
-            // after a pause, hold whatever the TV was at; never 0 or the top, where a press would not register
-            if (hold < 0 || now - lastMove > HOLD_IDLE_MS) hold = prev.coerceIn(1, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) - 1)
-            lastMove = now
+            if (echo >= 0 && value == echo) { echo = -1; return }
+            if (!ampOn()) return
             pending += value - prev
-            Log.i(TAG, "tv volume $prev -> $value, back to $hold")
-            if (am.getStreamVolume(AudioManager.STREAM_MUSIC) != hold) {
-                skipEcho = true
-                runCatching { am.setStreamVolume(AudioManager.STREAM_MUSIC, hold, 0) }
-            }
+            Log.i(TAG, "tv volume $prev -> $value")
             pump()
         }
     }
@@ -160,8 +150,21 @@ class KeyWatch : AccessibilityService() {
                 sending = false
                 show(reply)
                 pump()
+                if (!sending) matchTv(reply)
             }
         }
+    }
+
+    /** Everything pressed has reached the amplifier: set the TV's own volume to its level, so the TV's
+     *  bar shows the same number. Never the TV's top, where volume up would no longer register. */
+    private fun matchTv(reply: JSONObject?) {
+        val am = audio ?: return
+        val v = reply?.optJSONObject("volume") ?: return
+        if (v.isNull("level")) return
+        val target = v.optInt("level").coerceIn(0, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) - 1)
+        if (am.getStreamVolume(AudioManager.STREAM_MUSIC) == target) return
+        echo = target
+        runCatching { am.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0) }
     }
 
     /** The amplifier's level for a moment over whatever is on screen. */
@@ -230,7 +233,6 @@ class KeyWatch : AccessibilityService() {
         private const val AMP_NAME_PREF = "amp_name"
         private const val RECHECK_MS = 5 * 60_000L
         private const val MAX_STEPS = 10
-        private const val HOLD_IDLE_MS = 3000L
         // AudioManager's own names for these are hidden from apps; the broadcast itself is public.
         private const val VOLUME_CHANGED = "android.media.VOLUME_CHANGED_ACTION"
         private const val EXTRA_STREAM = "android.media.EXTRA_VOLUME_STREAM_TYPE"
