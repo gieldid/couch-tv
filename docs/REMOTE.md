@@ -69,6 +69,25 @@ Open Settings, Apps, Chrome, Permissions, Nearby devices, and choose Allow. The 
 away after that. It is not the address, the bridge or Chrome's "Always use secure connections" setting
 (reported on a Galaxy S25 Ultra, issue #69).
 
+## Lock screen controls
+
+The remote can put what is on the TV on your phone's lock screen (the iPhone's Now Playing, Android's
+media controls), with the show's picture, play or pause, and 10 seconds back or forward for the TV.
+Turn it on per phone: pull down the TV menu (swipe down from the top), **Lock screen**, **On**.
+
+It is off unless you turn it on, because of how it works: a web page only gets lock screen controls
+while it is playing audio, so the remote plays silent audio while it is on. That means:
+
+- Music, a podcast or anything else playing on that phone stops when it starts (and the lock screen
+  then shows that app instead, until you open the remote again).
+- The remote stays awake in the background, which uses a little more battery.
+- After the phone closes the remote, the first tap anywhere in it starts the lock screen again.
+- When the TV says whether it is playing or paused (Google TV and Android TV), the lock screen
+  follows it, and shows how far into the episode you are when the TV knows. On TVs that do not say,
+  the button simply sends play or pause.
+
+Volume cannot be on the lock screen: the phone's own volume buttons change the phone's volume.
+
 ## Optional: a private network, for a real installed app, an offline copy and the mic
 
 If you want the remote to behave like a proper app, give the computer an `https` address that only

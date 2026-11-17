@@ -385,7 +385,7 @@ export function PeopleSheet({ open, onClose, onSaved }) {
   );
 }
 
-export const MoreSheet = forwardRef(function MoreSheet({ open, onClose, sleepEnds, onSleep, onKey, onText, sleepError, tvs, tvId, onTv, picture, pictureInfo, onPicture, onArrange, onPeople, onKids }, ref) {
+export const MoreSheet = forwardRef(function MoreSheet({ open, onClose, sleepEnds, onSleep, onKey, onText, sleepError, tvs, tvId, onTv, picture, pictureInfo, onPicture, lock, onLock, onArrange, onPeople, onKids }, ref) {
   const [typed, setTyped] = useState('');
   const sheetEl = useRef(null);
   const setRefs = (el) => { sheetEl.current = el; if (typeof ref === 'function') ref(el); else if (ref) ref.current = el; };
@@ -441,6 +441,18 @@ export const MoreSheet = forwardRef(function MoreSheet({ open, onClose, sleepEnd
         </form>
         <p className="note">{t('type_note')}</p>
       </section>
+
+      {/* this phone's lock screen shows the TV's show, with play and pause (lockscreen.js) */}
+      {lock != null && (
+        <section className="more-block">
+          <h3><Ic.Lock size={16} /> {t('lock_screen')}</h3>
+          <div className="chips-row" role="radiogroup" aria-label={t('lock_screen')}>
+            <button role="radio" aria-checked={!lock} className={`chip glass ${!lock ? 'on' : ''}`} onClick={() => { tick(); onLock(false); }}>{t('lock_off')}</button>
+            <button role="radio" aria-checked={lock} className={`chip glass ${lock ? 'on' : ''}`} onClick={() => { tick(); onLock(true); }}>{t('lock_on')}</button>
+          </div>
+          <p className="note">{t('lock_note')}</p>
+        </section>
+      )}
 
       <div className="more-grid">
         <button className="tile glass" onClick={() => { tick(); onKey('captions'); }}><Ic.Captions /> {t('subtitles')}</button>

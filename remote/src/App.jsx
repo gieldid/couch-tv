@@ -9,6 +9,8 @@ import { AskSheet, MoreSheet, ArrangeSheet, PeopleSheet, Onboarding } from './Sh
 import { KidsSheet, PinSheet } from './Kids.jsx';
 import { usePullDown, usePageDrag } from './gestures.js';
 import { t, tBridge, useLang, setTvLang } from './i18n.js';
+import { logoFor } from './appLogos.js';
+import { lockSupported, lockOn, startLock, stopLock, armLock, updateLock } from './lockscreen.js';
 
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -256,6 +258,12 @@ export default function App() {
   const [wakeError, setWakeError] = useState(null);
   useEffect(() => { if (tv?.power === 'on') setWakeError(null); }, [tv?.power]);
   const onKey = (key, hold) => run(api.key(key, hold));
+  // Lock screen controls (lockscreen.js): a switch on this phone, in the TV menu.
+  const [lock, setLock] = useState(lockOn);
+  const lockKey = (key) => api.key(key).catch(() => {});
+  useEffect(() => armLock(lockKey), []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { updateLock(tv, appById[tv?.app?.id]?.name, logoFor(appById[tv?.app?.id]), thisTv?.name, lockKey); }, [tv, appById, thisTv?.name, lock]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onLock = (on) => { if (on) startLock(lockKey); else stopLock(); setLock(on && lockOn()); };
   const onVolume = (a) => run(api.volume(a));
   // A fully off TV leaves the Wi-Fi; the bridge tries Wake-on-LAN for up to 25 s, then gives up.
   const onWake = async () => {
@@ -400,7 +408,7 @@ export default function App() {
       <AskSheet ref={askInput} open={sheet === 'ask'} onClose={() => setSheet(null)} who={who} recs={recs} onAsk={onAsk} onDone={(reply) => say(reply)} />
       <MoreSheet ref={moreSheet} open={sheet === 'more'} tvs={tvs} tvId={tvId || 'living-room'} onTv={(id) => { tick(); chooseTv(id); }}
         picture={tv?.picture} pictureInfo={pictureInfo} onPicture={onPicture} onClose={() => setSheet(null)} sleepEnds={sleepEnds} sleepError={sleepError} onSleep={onSleep}
-        onKey={onKey} onText={(text) => run(api.text(text), t('sent_to_tv'))} onArrange={() => setSheet('arrange')} onPeople={() => setSheet('people')} onKids={() => setSheet('kids')} />
+        onKey={onKey} onText={(text) => run(api.text(text), t('sent_to_tv'))} lock={lockSupported() ? lock : null} onLock={onLock} onArrange={() => setSheet('arrange')} onPeople={() => setSheet('people')} onKids={() => setSheet('kids')} />
       <ArrangeSheet open={sheet === 'arrange'} onClose={() => setSheet(null)} tvName={thisTv?.name} hidden={hidden} />
       <KidsSheet open={sheet === 'kids'} onClose={() => setSheet(null)} onChanged={loadConfig} />
       <PinSheet ask={pinAsk} onClose={() => setPinAsk(null)} />
