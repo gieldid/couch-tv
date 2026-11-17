@@ -164,6 +164,10 @@ out the same way. The phone's People sheet keeps these marks when it renames or 
 { "id": "visitor", "name": "Visitor", "guest": true }
 ```
 
+`"greeting"` (optional, up to 120 characters) is what the TV says instead of "Welcome, <name>" when
+that person is picked (`home.say_welcome`). It can also be typed on the phone: People, the line under
+each name. Empty goes back to the welcome.
+
 `"name_lang"` (optional) is the language the TV's voice says that person's name in, for the welcome
 (`home.say_welcome`): `"nl"` makes an English home say "Welcome," and then the name with the Dutch
 voice. A language the TV has no voice for is said with its default voice.

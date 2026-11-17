@@ -166,6 +166,8 @@ S.en = {
   removed: 'Removed {name}. Their watch history stays on the bridge.',
   added: 'Added {name}.',
   add_person: 'Add a person',
+  greeting_placeholder: 'TV says: Welcome, {name}',
+  greeting_label: 'What the TV says when {name} is picked',
   // kids mode (Kids.jsx)
   kids_mode: "Kids mode",
   kids_lede: "A kids profile’s TV home shows only the shows on its shelf, and the apps you allow. Leaving it on the TV needs the parent PIN.",

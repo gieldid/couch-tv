@@ -141,6 +141,10 @@ def clean_people(items):
         for flag in ("kid", "guest"):
             if p.get(flag) is True:
                 item[flag] = True
+        # What the TV says when they are picked (home.say_welcome), instead of "Welcome, <name>".
+        greeting = " ".join(str(p.get("greeting") or "").split())[:120]
+        if greeting:
+            item["greeting"] = greeting
         # The language their name is said in by the TV's voice ("nl" for a Dutch name in an English home).
         if isinstance(p.get("name_lang"), str) and re.fullmatch(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8})?", p["name_lang"]):
             item["name_lang"] = p["name_lang"]

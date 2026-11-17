@@ -336,6 +336,16 @@ export function PeopleSheet({ open, onClose, onSaved }) {
     if (!clean || !was || clean === was.name) { setRows(rows.slice()); return; }
     save(rows.map((p) => (p.id === id ? { ...p, name: clean } : p)));
   };
+  const setGreeting = (id, text) => {
+    const clean = text.replace(/\s+/g, ' ').trim();
+    const was = rows.find((p) => p.id === id);
+    if (!was || clean === (was.greeting || '')) return;
+    save(rows.map((p) => {
+      if (p.id !== id) return p;
+      const { greeting, ...rest } = p;
+      return clean ? { ...rest, greeting: clean } : rest;
+    }));
+  };
   const remove = (p) => { tick(); save(rows.filter((x) => x.id !== p.id), t('removed', { name: p.name })); };
   const add = (e) => {
     e.preventDefault();
@@ -366,9 +376,16 @@ export function PeopleSheet({ open, onClose, onSaved }) {
         {(rows || []).map((p) => (
           <li key={p.id} className={`arrange-row glass ${drag === p.id ? 'lifted' : ''}`}>
             <span className="person-dot" style={{ background: personColour(p) }}>{p.name.slice(0, 1).toUpperCase()}</span>
-            <input className="person-name" defaultValue={p.name} key={p.name} maxLength={40} aria-label={`Name for ${p.name}`}
-              enterKeyHint="done" onBlur={(e) => rename(p.id, e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+            <div className="person-fields">
+              <input className="person-name" defaultValue={p.name} key={p.name} maxLength={40} aria-label={`Name for ${p.name}`}
+                enterKeyHint="done" onBlur={(e) => rename(p.id, e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+              {/* what the TV says when they are picked (home.say_welcome); empty: "Welcome, <name>" */}
+              <input className="person-greeting" defaultValue={p.greeting || ''} key={`g-${p.greeting || ''}`} maxLength={120}
+                placeholder={t('greeting_placeholder', { name: p.name })} aria-label={t('greeting_label', { name: p.name })}
+                enterKeyHint="done" onBlur={(e) => setGreeting(p.id, e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+            </div>
             <button className="person-remove" aria-label={`Remove ${p.name}`} onClick={() => remove(p)}><Ic.Close size={18} /></button>
             <button className="grip" aria-label={`Move ${p.name}`} onPointerDown={(e) => start(e, p.id)}><Ic.Grip size={20} /></button>
           </li>

@@ -1995,6 +1995,11 @@
     var p = personById(id);
     if (!p) return;
     var lang = document.documentElement.lang || "en";
+    // their own words, typed on the phone (People), instead of "Welcome, <name>"
+    if (p.greeting) {
+      try { TVOS.sayParts ? TVOS.sayParts(JSON.stringify([{ text: p.greeting, lang: lang }])) : TVOS.say(p.greeting, lang); } catch (e) {}
+      return;
+    }
     // a name from another language ("name_lang") is said by that language's voice, the rest by the home's
     var line = t("welcome_person", { name: "\u0000" }).split("\u0000");
     var parts = p.name_lang && p.name_lang !== lang && line.length === 2 && TVOS.sayParts
