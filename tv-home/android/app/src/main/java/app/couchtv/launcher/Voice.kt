@@ -1,6 +1,8 @@
 package app.couchtv.launcher
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice as TtsVoice
 import android.util.Log
@@ -13,8 +15,9 @@ import java.util.Locale
  * the Dutch voice (a person's "name_lang"). The language can be a region ("en-US", home.voice), and
  * then the most natural voice the TV has stored for it is used; a full voice name (as logged under
  * "couchtv-voice") picks that one. A language the TV has no voice for uses its default voice.
- * The engine starts when the home opens and stays for the life of the app, and the voice chosen for
- * a language is remembered, so a line starts quickly. A TV without an engine simply says nothing.
+ * The engine starts when a line is asked for and stops again [IDLE_MS] after the last one: it takes
+ * about 45 MB, which a 2 GB TV (a Philips TPM191E) could not spare. While it runs, the voice chosen
+ * for a language is remembered, so a line starts quickly. A TV without an engine simply says nothing.
  */
 object Voice {
     private var tts: TextToSpeech? = null
@@ -22,16 +25,17 @@ object Voice {
     private var waiting: List<Pair<String, String>>? = null   // asked for before the engine was up
     private val chosen = HashMap<String, TtsVoice?>()        // language or voice name -> voice (null: default)
     private var current: String? = null                      // what the engine is set to now
+    private val main = Handler(Looper.getMainLooper())
+    private val stop = Runnable { shutdown() }
 
     @Synchronized
     fun say(c: Context, parts: List<Pair<String, String>>) {
         val clean = parts.map { (text, lang) -> text.trim().take(200) to lang }
             .filter { (text, _) -> text.any { it.isLetterOrDigit() } }
+        if (clean.isEmpty()) return
+        main.removeCallbacks(stop)
+        main.postDelayed(stop, IDLE_MS)
         val engine = tts
-        if (clean.isEmpty()) {   // nothing to say: only start the engine, so the first real line is quick
-            if (engine == null) tts = TextToSpeech(c.applicationContext) { status -> started(status) }
-            return
-        }
         if (engine == null) {
             waiting = clean
             tts = TextToSpeech(c.applicationContext) { status -> started(status) }
@@ -58,6 +62,19 @@ object Voice {
         }
         waiting?.let { speak(engine, it) }
         waiting = null
+    }
+
+    /** Nothing said for a while: give the engine's memory back. The next line starts it again. */
+    @Synchronized
+    private fun shutdown() {
+        val engine = tts ?: return
+        runCatching { engine.shutdown() }
+        tts = null
+        ready = false
+        waiting = null
+        chosen.clear()
+        current = null
+        Log.i(TAG, "voice stopped")
     }
 
     /** The voice for a language ("en-US": the most natural one stored on the TV) or a voice name. */
@@ -87,4 +104,5 @@ object Voice {
     }
 
     private const val TAG = "couchtv-voice"
+    private const val IDLE_MS = 2 * 60_000L
 }

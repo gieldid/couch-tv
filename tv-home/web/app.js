@@ -4922,8 +4922,6 @@
         });
       } catch (e) {}
     }
-    // start the TV's voice now, so the first welcome is not late (Voice.kt starts on an empty line)
-    if (HOME.say_welcome && window.TVOS && TVOS.sayParts) { try { TVOS.sayParts("[]"); } catch (e) {} }
     // The bridge's choice wins (a phone that just turned the TV on set it); this TV's own memory is
     // only handed over when the bridge has nobody yet.
     var hello = OFFLINE ? Promise.resolve() : api("GET", "/api/who").then(function (j) {
