@@ -7,6 +7,7 @@ and edit it. config.json is in .gitignore: it never gets committed.
 Secrets never go in here. They are environment variables (see env.example).
 """
 import json
+import logging
 import os
 import re
 import shutil
@@ -65,12 +66,12 @@ if PAIRING_KEY and not re.fullmatch(r"[A-Za-z0-9_-]{12,128}", PAIRING_KEY):
                      "(for example: python3 -c 'import secrets; print(secrets.token_urlsafe(18))')")
 CLIENT_NAME = CONFIG.get("client_name", "Couch TV bridge")
 
-# The languages the TV home and the phone remote speak (tv-home/web/i18n.js, remote/src/i18n.js).
-LANGUAGES = ("en", "es", "es-MX", "it", "de", "tr", "fr", "sr-Latn-RS", "nl", "he", "cs", "pl", "pt")
+# Languages accepted by the TV home and its settings (tv-home/web/i18n.js).
+LANGUAGES = ("en", "es", "es-MX", "it", "de", "tr", "fr", "sr-Latn-RS", "nl", "he", "cs", "pl", "pt", "ar", "ro", "zh-CN")
 # Where shows stream (JustWatch) and what the prompts call the country: "country" in config.json.
 # Without it: the country of the home's language, where it has one of its own (Italian: IT,
-# German: DE, Turkish: TR, Serbian: RS, Dutch: BE, Hebrew: IL, Czech: CZ, Polish: PL, Brazilian Portuguese: BR), else AU.
-_LANGUAGE_COUNTRY = {"it": "IT", "de": "DE", "tr": "TR", "sr-Latn-RS": "RS", "nl": "BE", "he": "IL", "cs": "CZ", "pl": "PL", "pt": "BR"}
+# German: DE, Turkish: TR, Serbian: RS, Dutch: BE, Hebrew: IL, Czech: CZ, Polish: PL, Brazilian Portuguese: BR, Arabic: SA, Romanian: RO, Simplified Chinese: CN), else AU.
+_LANGUAGE_COUNTRY = {"it": "IT", "de": "DE", "tr": "TR", "sr-Latn-RS": "RS", "nl": "BE", "he": "IL", "cs": "CZ", "pl": "PL", "pt": "BR", "ar": "SA", "ro": "RO", "zh-CN": "CN"}
 _language = CONFIG["home"].get("language") if isinstance(CONFIG.get("home"), dict) else None
 COUNTRY = str(CONFIG.get("country") or _LANGUAGE_COUNTRY.get(str(_language)) or "AU").upper()
 _COUNTRY_NAMES = {
@@ -79,7 +80,8 @@ _COUNTRY_NAMES = {
     "SG": "Singapore", "DE": "Germany", "FR": "France", "ES": "Spain", "IT": "Italy",
     "NL": "the Netherlands", "SE": "Sweden", "NO": "Norway", "DK": "Denmark", "FI": "Finland",
     "BR": "Brazil", "MX": "Mexico", "JP": "Japan", "KR": "South Korea", "PH": "the Philippines",
-    "RS": "Serbia", "IL": "Israel", "CZ": "Czechia", "PL": "Poland",
+    "RS": "Serbia", "IL": "Israel", "CZ": "Czechia", "PL": "Poland", "SA": "Saudi Arabia",
+    "RO": "Romania", "CN": "China",
 }
 COUNTRY_NAME = CONFIG.get("country_name") or _COUNTRY_NAMES.get(COUNTRY, COUNTRY)
 # The home's time zone, for times the bridge writes down: "timezone" under "weather".
@@ -291,6 +293,121 @@ def _my_scenes(items):
     return out
 
 
+# The four looks the home can wear. Loop is the video one (docs/LOOP.md): it needs the files below.
+LOOKS = ("night", "classic", "oled", "loop")
+
+# The Loop look's footage, made by scripts/make-loop.sh on this computer (git ignores the folder):
+# <variant>.mp4 and its 160x90 blurred copy <variant>-blur.mp4 for the glass, with a poster of
+# each (<variant>.jpg, <variant>-blur.jpg). One variant per time of day, in this order. A photo's
+# loop made with --matte also has <variant>-fg.png, the cut-out the home draws over the clock, and
+# every run writes loop.json, the loop's length and motion (docs/LOOP.md, the depth effect).
+LOOP_DIR = os.path.join(ROOT, "tv-home", "web", "loop")
+LOOP_VARIANTS = ("dawn", "day", "dusk", "night")
+LOOP_SCREEN = (1920, 1080)   # the home's design pixels, which loop.json's fg rectangle is in
+_log = logging.getLogger("config")
+_loop_json_told = set()      # the loop.json files (path, size, time) already logged as ignored
+
+
+def loop_files(folder):
+    """What the Loop look can play from `folder`: the variants whose .mp4 is there, in the order
+    dawn, day, dusk, night, and `blur` true only when every present variant has its blurred copy
+    (one without it would make the glass go dark at that time of day). A missing folder gives an
+    empty list, so the key is always there for the home to read. `meta` is loop.json when it is
+    there and sound, else None; `fg` is true only when meta has a cut-out rectangle and every
+    present variant has its <variant>-fg.png (one without it would lose the depth at that time of
+    day).
+
+    Only those exact names count, in `folder` itself: make-loop.sh makes each run's files in a hidden
+    folder inside it (.staging-<pid>/.dawn.mp4 and so on) and moves them in only when every encode has
+    worked, loop.json last, so a run under way, or one that failed or was stopped, is never listed. A
+    dotfile, a temp name (dawn.mp4.part, .dawn.mp4) or anything in a subfolder is not a variant."""
+    variants = [v for v in LOOP_VARIANTS if os.path.isfile(os.path.join(folder, v + ".mp4"))]
+    blur = bool(variants) and all(os.path.isfile(os.path.join(folder, v + "-blur.mp4")) for v in variants)
+    meta = loop_meta(folder)
+    fg = bool(variants) and bool(meta and meta["fg"]) and \
+        all(os.path.isfile(os.path.join(folder, v + "-fg.png")) for v in variants)
+    return {"variants": variants, "blur": blur, "version": loop_version(folder, variants), "meta": meta, "fg": fg}
+
+
+def _in_range(v, lo, hi):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and lo <= v <= hi
+
+
+def _whole(v):
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def loop_meta(folder):
+    """loop.json from make-loop.sh: {"still", "seconds", "fps", "zoom", "sway", "fg"}, checked:
+    seconds 15 to 60, fps 30, zoom 0 to 0.2, sway 0 to 1 (a share of the room the zoom leaves, so
+    ffmpeg never clamps it), fg null or whole numbers x, y, w, h
+    with the rectangle inside the 1920x1080 screen. None when the file is missing; when it is there
+    but not sound, None and one log line (once for each version of the file, since this is read on
+    every request for config.js)."""
+    path = os.path.join(folder, "loop.json")
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return None
+    except OSError as e:
+        return _loop_meta_bad(path, None, "it could not be read (%s)" % e)
+    try:
+        with open(path, encoding="utf-8") as f:
+            m = json.load(f)
+    except (OSError, ValueError) as e:
+        return _loop_meta_bad(path, st, "it could not be read (%s)" % e)
+    if not isinstance(m, dict):
+        return _loop_meta_bad(path, st, "it is not an object")
+    fg = m.get("fg")
+    sw, sh = LOOP_SCREEN
+    why = None
+    if not isinstance(m.get("still"), bool):
+        why = "still is not true or false"
+    elif not _in_range(m.get("seconds"), 15, 60):
+        why = "seconds is not from 15 to 60"
+    elif m.get("fps") != 30 or isinstance(m.get("fps"), bool):
+        why = "fps is not 30"
+    elif not _in_range(m.get("zoom"), 0, 0.2):
+        why = "zoom is not from 0 to 0.2"
+    elif not _in_range(m.get("sway"), 0, 1):
+        why = "sway is not from 0 to 1"
+    elif fg is not None:
+        if not (isinstance(fg, dict) and all(_whole(fg.get(k)) for k in ("x", "y", "w", "h"))):
+            why = "fg is not whole numbers x, y, w and h"
+        elif not (fg["x"] >= 0 and fg["y"] >= 0 and fg["w"] > 0 and fg["h"] > 0
+                  and fg["x"] + fg["w"] <= sw and fg["y"] + fg["h"] <= sh):
+            why = "fg is not inside the %dx%d screen" % (sw, sh)
+    if why:
+        return _loop_meta_bad(path, st, why)
+    return {"still": m["still"], "seconds": m["seconds"], "fps": 30, "zoom": m["zoom"], "sway": m["sway"],
+            "fg": None if fg is None else {k: fg[k] for k in ("x", "y", "w", "h")}}
+
+
+def _loop_meta_bad(path, st, why):
+    key = (path, st.st_size, st.st_mtime_ns) if st else (path, why)
+    if key not in _loop_json_told:
+        _loop_json_told.add(key)
+        _log.warning("the Loop look ignores %s: %s; run scripts/make-loop.sh again (docs/LOOP.md)", path, why)
+    return None
+
+
+def loop_version(folder, variants):
+    """A short mark of the loop files as they are now (names, sizes and times), which the home adds to
+    the files' addresses: the bridge serves them with an hour of caching, and without it a TV would go
+    on playing the old files for an hour after make-loop.sh made new ones. loop.json counts too, as the
+    cut-out's motion lives there. Empty with no variants."""
+    import hashlib
+    h = hashlib.sha1()
+    names = [v + suffix for v in variants for suffix in (".mp4", "-blur.mp4", ".jpg", "-blur.jpg", "-fg.png")]
+    for name in names + ["loop.json"]:
+        try:
+            st = os.stat(os.path.join(folder, name))
+        except OSError:
+            continue
+        h.update(f"{name}:{st.st_size}:{int(st.st_mtime)}\n".encode())
+    return h.hexdigest()[:10] if variants else ""
+
+
 def _home(h):
     h = h if isinstance(h, dict) else {}
     mine = _my_scenes(h.get("my_scenes"))
@@ -300,7 +417,7 @@ def _home(h):
     out = {
         # Android package names never shown on the home or in More apps (a maker's own clutter).
         "hide_packages": [p for p in dict.fromkeys(hide) if isinstance(p, str) and re.fullmatch(r"[A-Za-z0-9_.]{1,200}", p)],
-        "look": h.get("look") if h.get("look") in ("night", "classic", "oled") else "night",
+        "look": h.get("look") if h.get("look") in LOOKS else "night",
         "scenes": scenes or list(SCENE_IDS),
         "scene_seconds": _int(h.get("scene_seconds"), 20, 5, 3600),
         "dock_size": _int(h.get("dock_size"), DOCK_LIMIT, 1, DOCK_LIMIT),
@@ -328,11 +445,17 @@ def _home(h):
         out["glass"] = h["glass"]
     if isinstance(h.get("glass_icons"), bool):
         out["glass_icons"] = h["glass_icons"]
+    # the Night dock shows each app's wide TV banner instead of its square icon (six apps fit)
+    if isinstance(h.get("dock_banners"), bool):
+        out["dock_banners"] = h["dock_banners"]
     # the focused tile's slow sway (#52): on, or off for a TV that flickers
     if isinstance(h.get("keep_photo"), bool):
         out["keep_photo"] = h["keep_photo"]
     if isinstance(h.get("moving_tiles"), bool):
         out["moving_tiles"] = h["moving_tiles"]
+    # the Mac-style dock: the focused app and its neighbours grow in a wave, its name in a bubble
+    if h.get("dock") in ("mac", "classic"):
+        out["dock"] = h["dock"]
     # lighter home for a slow box (#58): no blur, no soft shadows, a still photo, smaller pictures
     if isinstance(h.get("lighter"), bool):
         out["lighter"] = h["lighter"]
@@ -342,6 +465,16 @@ def _home(h):
     # its voice: a language and region ("en-US") or one voice's full name (Voice.kt logs the TV's)
     if isinstance(h.get("voice"), str) and re.fullmatch(r"[A-Za-z0-9-]{2,40}", h["voice"]):
         out["voice"] = h["voice"]
+    # draw the home at a lower resolution and let the TV scale it up (weak GPUs, MediaTek/Mali projectors):
+    # the app reads it from the saved settings, so it only needs to get through here
+    if isinstance(h.get("render_height"), int) and not isinstance(h.get("render_height"), bool) and 360 <= h["render_height"] <= 2160:
+        out["render_height"] = h["render_height"]
+    # remote buttons that open an app (KeyWatch.kt): "KEYCODE_BUTTON_3:org.smarttube.stable", "190:pkg" or "scan384:pkg"
+    if isinstance(h.get("app_keys"), list):
+        keys = [k for k in h["app_keys"] if isinstance(k, str) and re.fullmatch(
+            r"(KEYCODE_[A-Z0-9_]{1,40}|\d{1,4}|scan\d{1,4}):(gear|[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+)", k)]
+        if keys:
+            out["app_keys"] = keys[:30]
     # "always": the 4K copies on a 4K panel whose interface is drawn at 1080 (#191). false: a 4K screen with a weak chip keeps the 1080 backgrounds (lg/build.py then leaves the 4K copies out)
     if isinstance(h.get("hi_res"), bool) or h.get("hi_res") == "always":
         out["hi_res"] = h["hi_res"]
@@ -359,6 +492,9 @@ def _home(h):
     # false hides the whole Keep watching row and stops the home asking for it. Home settings win over it.
     if isinstance(h.get("keep_watching"), bool):
         out["keep_watching"] = h["keep_watching"]
+    # true makes the row follow the app the remote is on ("Recently on <app>"). Home settings win over it.
+    if isinstance(h.get("shelf_follows_app"), bool):
+        out["shelf_follows_app"] = h["shelf_follows_app"]
     if isinstance(h.get("ambient_music"), bool):
         out["ambient_music"] = h["ambient_music"]
     if isinstance(h.get("sun_sync"), bool):
@@ -402,6 +538,8 @@ def _home(h):
     if src:
         out["custom_cards"] = src[1] if src[0] == "url" else True
     out["watch_next_per_app"] = _int(h.get("watch_next_per_app"), 5, 1, 20)
+    # the Loop look's files on this computer (read only: the bridge builds it, config.json cannot set it)
+    out["loop"] = loop_files(LOOP_DIR)
     out["smart_idle"] = _smart_idle(h.get("smart_idle"))
     if "inputs" in h:
         out["inputs"] = _inputs(h.get("inputs"))
@@ -444,6 +582,79 @@ def _inputs(raw_list):
 
 HOME = _home(CONFIG.get("home"))
 
+
+# A design is untrusted input that runs on a TV. tv-home/web/design.js is the real gate (it rebuilds
+# the design from an allowed list); this is a second one, so nothing that looks like a link or markup
+# is even handed to the home: such a value is dropped, with a note.
+_DESIGN_PICTURE = re.compile(r"^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$")
+_DESIGN_BAD = re.compile(r"(?i)(\b(javascript|vbscript|https?|ftp|file|blob)\s*:|^\s*//|<\s*/?\s*(script|iframe|object|embed|svg|img|style|link)\b|\bon\w+\s*=|url\s*\(|@import|expression\s*\()")
+
+
+def _design_clean(v, depth=0, dropped=None):
+    if depth > 8:
+        return None
+    if isinstance(v, dict):
+        out = {}
+        for k, x in list(v.items())[:200]:
+            if not isinstance(k, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", k):
+                dropped.append(str(k)[:40])
+                continue
+            c = _design_clean(x, depth + 1, dropped)
+            if c is not None:
+                out[k] = c
+        return out
+    if isinstance(v, list):
+        return [c for c in (_design_clean(x, depth + 1, dropped) for x in v[:200]) if c is not None]
+    if isinstance(v, str):
+        if _DESIGN_PICTURE.match(v):
+            return v
+        if len(v) > 2000 or _DESIGN_BAD.search(v):
+            dropped.append(v[:40])
+            return None
+        return v
+    if isinstance(v, bool) or v is None:
+        return v
+    if isinstance(v, (int, float)):
+        return v if abs(v) < 1e9 else None
+    return None
+
+
+def _design(d):
+    """couch-tv Studio's design block (docs/CONFIG.md, "Design"), cleaned of anything that looks like
+    a link or markup, then handed to the TV home, whose design.js checks every value again. Only an
+    object, and not too big for the TV to keep (an uploaded background travels inside it)."""
+    if not isinstance(d, dict) or not d:
+        return None
+    if len(json.dumps(d)) > 4_000_000:
+        print("config: design is over 4 MB (a smaller background picture fixes it), the home stays as it is")
+        return None
+    dropped = []
+    clean = _design_clean(d, 0, dropped)
+    if dropped:
+        print("config: design: left out %d value(s) that looked like a link or markup" % len(dropped))
+    return clean or None
+
+
+DESIGN = _design(CONFIG.get("design"))
+
+
+def _design_store(u):
+    """couch-tv Studio's design store (docs/CONFIG.md, "Design"): the one server the TV may ask for a
+    design by code. https only (plain http only to this computer, for development); no path."""
+    if not isinstance(u, str):
+        return None
+    if not u.strip():
+        return ""   # "design_store": "" turns getting a design by code off, and the TV is told so
+    m = re.fullmatch(r"(?i)(https://[a-z0-9.-]+(:\d{1,5})?|http://(127\.0\.0\.1|localhost)(:\d{1,5})?)/?", u.strip())
+    if not m:
+        if u:
+            print("config: design_store must be an https address with no path, it was left out")
+        return None
+    return m.group(1).lower()
+
+
+DESIGN_STORE = _design_store(CONFIG.get("design_store"))
+
 # the source of the custom cards (home.custom_cards), kept here: the TV only sees HOME["custom_cards"]
 CUSTOM_CARDS = custom_cards.source((CONFIG.get("home") or {}).get("custom_cards") if isinstance(CONFIG.get("home"), dict) else None,
                                    os.path.dirname(os.path.abspath(CONFIG_FILE)))
@@ -483,6 +694,32 @@ def picture_modes(pic):
     return [{"id": k, "name": str(v) if panel else k.replace("-", " ").title()} for k, v in list(values.items())[:2]]
 
 
+# ---------- Plex (optional, option B): Keep watching from the server's own Continue Watching ----------
+# The server's address as the bridge reaches it, and (optional) whose cards they are. The token is
+# PLEX_TOKEN in .env, never here (bridge/plex.py). None: no section, "enabled": false, or no address.
+PLEX_ERROR = None   # why a plex section that is there was refused (the bridge's log and /api/plex/status say)
+
+
+def _plex(raw):
+    global PLEX_ERROR
+    PLEX_ERROR = None
+    p = raw if isinstance(raw, dict) else {}
+    url = str(p.get("url") or "").strip().rstrip("/")
+    if p.get("enabled") is False:
+        return None
+    if not re.fullmatch(r"https?://[^/\s?#]+", url):
+        if url:
+            PLEX_ERROR = f"plex.url must be http(s)://<name or address>[:port] with no path, not {url!r}"
+        elif raw:
+            PLEX_ERROR = "the plex section has no url"
+        return None
+    who = str(p.get("who") or "").strip()
+    return {"url": url, "who": who or None}
+
+
+PLEX = _plex(CONFIG.get("plex"))
+
+
 # ---------- the phone remote and the Claude ask ----------
 PHONE_REMOTE = CONFIG.get("phone_remote", True) is not False
 
@@ -508,11 +745,15 @@ def save_tvs():
 def public():
     """The parts the TV home and the phone remote are allowed to see."""
     import kids   # kids mode: the shelf and the PIN's hash (never the PIN) on each kids profile
-    return {"people": kids.attach(PEOPLE), "weather": WEATHER, "home": HOME,
+    # home.loop is read afresh: make-loop.sh may have run since the bridge started
+    return {"people": kids.attach(PEOPLE), "weather": WEATHER, "home": dict(HOME, loop=loop_files(LOOP_DIR)),
             "tvs": [dict({"id": t["id"], "name": t["name"], "quick": quick_for(t),
                           "extend_devmode": t.get("extend_devmode", True) is not False,
                           "picture_modes": [m["name"] for m in picture_modes(t.get("picture"))]},
                          # input tiles for this TV only (its own HDMI devices); else home.inputs
                          **({"inputs": _inputs(t["inputs"])} if isinstance(t.get("inputs"), list) else {}))
                      for t in TVS],
-            "default_tv": DEFAULT_TV, "ask": {"enabled": ASK_ENABLED}, "phone_remote": PHONE_REMOTE}
+            "default_tv": DEFAULT_TV, "ask": {"enabled": ASK_ENABLED}, "phone_remote": PHONE_REMOTE,
+            # only when config.json has one: without it the home is exactly as before
+            **({"design": DESIGN} if DESIGN else {}),
+            **({"design_store": DESIGN_STORE} if DESIGN_STORE is not None else {})}
